@@ -1,0 +1,7 @@
+<webscript>
+  <shortname>Text Viewer (Range)</shortname>
+  <description>Streams a text file using HTTP Range</description>
+  <url>/textview/view</url>
+  <authentication>user</authentication>
+  <format default="json" />
+</webscript>

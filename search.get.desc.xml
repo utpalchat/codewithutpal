@@ -1,0 +1,8 @@
+
+<webscript>
+  <shortname>Text Search</shortname>
+  <description>Search in big text content and return hit offsets</description>
+  <url>/textview/search</url>
+  <authentication>user</authentication>
+  <format default="json" />
+</webscript>
