@@ -1,0 +1,143 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Big Text Viewer</title>
+  <style>
+    body { font-family: sans-serif; margin: 16px; }
+    #bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    #out { height: 70vh; overflow:auto; border:1px solid #ccc; padding:8px; white-space:pre; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    input { padding:6px; }
+    button { padding:6px 10px; }
+    #hits { margin-top: 8px; }
+    .hit { cursor:pointer; padding:6px; border:1px solid #ddd; margin:6px 0; }
+    .hit:hover { background:#f7f7f7; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <label>nodeRef <input id="nodeRef" size="60" placeholder="workspace://SpacesStore/..." /></label>
+    <label>offset <input id="offset" size="14" value="0" /></label>
+    <button onclick="loadChunk()">Load</button>
+    <button onclick="prevChunk()">Prev</button>
+    <button onclick="nextChunk()">Next</button>
+    <span id="meta"></span>
+  </div>
+
+  <div style="margin-top:10px" id="bar2">
+    <label>Search <input id="q" size="30" placeholder="text to find" /></label>
+    <button onclick="search()">Find</button>
+    <button onclick="searchNext()">Find Next</button>
+    <span id="searchMeta"></span>
+  </div>
+
+  <div id="out"></div>
+  <div id="hits"></div>
+
+<script>
+const CHUNK = 1024 * 1024; // 1MB window
+let totalBytes = null;
+let lastContentRange = null;
+let lastSearchNextOffset = 0;
+
+function apiBase() {
+  // Adjust for your env if needed. For repo tier webscripts:
+  // e.g. http://localhost:8080/alfresco/service/...
+  return "http://localhost:8080/alfresco/service";
+}
+
+async function loadChunk() {
+  const nodeRef = document.getElementById("nodeRef").value.trim();
+  let offset = Number(document.getElementById("offset").value || "0");
+  if (!nodeRef) return alert("nodeRef required");
+
+  const start = Math.max(0, offset);
+  const end = start + CHUNK - 1;
+
+  const url = `${apiBase()}/textview/view?nodeRef=${encodeURIComponent(nodeRef)}`;
+
+  const res = await fetch(url, { headers: { "Range": `bytes=${start}-${end}` } });
+  const txt = await res.text();
+
+  // headers
+  const cr = res.headers.get("Content-Range"); // "bytes start-end/total"
+  lastContentRange = cr;
+  if (cr) {
+    const m = cr.match(/bytes\s+(\d+)-(\d+)\/(\d+)/);
+    if (m) {
+      document.getElementById("offset").value = m[1];
+      totalBytes = Number(m[3]);
+      document.getElementById("meta").textContent = `Showing bytes ${m[1]}-${m[2]} of ${m[3]}`;
+    }
+  } else {
+    document.getElementById("meta").textContent = `Loaded (no Content-Range)`;
+  }
+
+  document.getElementById("out").textContent = txt;
+  document.getElementById("out").scrollTop = 0;
+}
+
+function nextChunk() {
+  let offset = Number(document.getElementById("offset").value || "0");
+  offset += CHUNK;
+  if (totalBytes != null) offset = Math.min(offset, Math.max(0, totalBytes - 1));
+  document.getElementById("offset").value = offset;
+  loadChunk();
+}
+
+function prevChunk() {
+  let offset = Number(document.getElementById("offset").value || "0");
+  offset = Math.max(0, offset - CHUNK);
+  document.getElementById("offset").value = offset;
+  loadChunk();
+}
+
+async function search() {
+  lastSearchNextOffset = 0;
+  await doSearch(0);
+}
+
+async function searchNext() {
+  await doSearch(lastSearchNextOffset);
+}
+
+async function doSearch(startOffset) {
+  const nodeRef = document.getElementById("nodeRef").value.trim();
+  const q = document.getElementById("q").value;
+  if (!nodeRef) return alert("nodeRef required");
+  if (!q) return alert("q required");
+
+  const url = `${apiBase()}/textview/search?nodeRef=${encodeURIComponent(nodeRef)}&q=${encodeURIComponent(q)}&maxHits=50&startOffset=${startOffset}`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  lastSearchNextOffset = data.nextOffset || (startOffset + 1);
+
+  document.getElementById("searchMeta").textContent =
+    `Hits: ${data.hits.length}, nextOffset: ${lastSearchNextOffset}`;
+
+  const hitsDiv = document.getElementById("hits");
+  hitsDiv.innerHTML = "<h3>Matches</h3>";
+
+  data.hits.forEach(h => {
+    const d = document.createElement("div");
+    d.className = "hit";
+    d.textContent = `@${h.offset}  ${h.snippet}`;
+    d.onclick = () => {
+      document.getElementById("offset").value = h.offset;
+      loadChunk();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    hitsDiv.appendChild(d);
+  });
+
+  if (data.hits.length === 0) {
+    const p = document.createElement("div");
+    p.textContent = "No matches in this scan window. Click Find Next to continue scanning.";
+    hitsDiv.appendChild(p);
+  }
+}
+</script>
+</body>
+</html>
